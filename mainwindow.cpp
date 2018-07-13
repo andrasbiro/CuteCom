@@ -64,6 +64,7 @@ MainWindow::MainWindow(QWidget *parent, const QString &session)
     , m_keyRepeatTimer(this)
     , m_keyCode('\0')
     , m_cmdBufIndex(0)
+    , m_reconnectTimer(this)
 {
     QCoreApplication::setOrganizationName(QStringLiteral("CuteCom"));
     // setting it to CuteCom5 will prevent the original CuteCom's settings file
@@ -201,6 +202,10 @@ MainWindow::MainWindow(QWidget *parent, const QString &session)
     connect(m_command_history, &QListWidget::itemClicked, this, &MainWindow::commandFromHistoryClicked);
     connect(m_command_history, &QListWidget::doubleClicked, this, &MainWindow::execCmd);
     connect(m_bt_sendfile, &QPushButton::clicked, this, &MainWindow::sendFile);
+    connect(&m_reconnectTimer, &QTimer::timeout, this, &MainWindow::openDevice);
+
+    m_reconnectTimer.setSingleShot(false);
+    m_reconnectTimer.setInterval(1000); //1s reconnection period is usually enough
 
     // tie the control panel's edit and this window's information label together
     m_lb_logfile->setText(m_settings->getLogFileLocation());
@@ -350,6 +355,7 @@ void MainWindow::openDevice()
     m_device->setPortName(session.device);
     m_deviceState = DEVICE_OPENING;
     if (m_device->open(session.openMode)) {
+        m_reconnectTimer.stop();
         m_deviceState = DEVICE_OPEN;
         // printDeviceInfo(); // debugging
 
@@ -389,6 +395,15 @@ void MainWindow::openDevice()
     }
 }
 
+void MainWindow::disableInput()
+{
+    m_input_edit->setEnabled(false);
+    controlPanel->m_bt_open->setFocus();
+    controlPanel->m_combo_device->setEnabled(true);
+    m_bt_sendfile->setEnabled(false);
+    m_command_history->setEnabled(false);
+}
+
 /**
  * This is connected to the control panels closing signal.
  * and need not to be called directly
@@ -399,11 +414,7 @@ void MainWindow::closeDevice()
     m_device->clearError();
     m_device->close();
     m_deviceState = DEVICE_CLOSED;
-    m_input_edit->setEnabled(false);
-    controlPanel->m_bt_open->setFocus();
-    controlPanel->m_combo_device->setEnabled(true);
-    m_bt_sendfile->setEnabled(false);
-    m_command_history->setEnabled(false);
+    disableInput();
     if (m_logFile.isOpen()) {
         m_logFile.flush();
         m_logFile.close();
@@ -420,15 +431,25 @@ void MainWindow::handleError(QSerialPort::SerialPortError error)
 {
     if (error == QSerialPort::NoError) {
         return;
-    } else if (m_deviceState == DEVICE_OPEN || m_deviceState == DEVICE_OPENING) {
+    } else if (m_deviceState == DEVICE_OPEN || m_deviceState == DEVICE_OPENING || m_deviceState == DEVICE_RECONNECT) {
         // on hot unplug of usb2serial adapters, multiple errors will be
         // reported which is of no importance to the users.
         // reporting it once should be enough
-        QString heading = (m_deviceState == DEVICE_OPENING) ? tr("Error opening device") : tr("Device Error");
-        m_deviceState = DEVICE_CLOSING;
-        QMessageBox::critical(this, heading, m_device->errorString());
-        // this will finally close the device too;
-        controlPanel->closeDevice();
+
+        if ( m_settings->getCurrentSession().autoReconnect ){
+            m_deviceState = DEVICE_RECONNECT;
+            disableInput();
+            if ( m_device->isOpen() ){ //close the device if it was opened but
+                m_device->close();
+            }
+            m_reconnectTimer.start();
+        } else {
+            QString heading = (m_deviceState == DEVICE_OPENING) ? tr("Error opening device") : tr("Device Error");
+            m_deviceState = DEVICE_CLOSING;
+            QMessageBox::critical(this, heading, m_device->errorString());
+            // this will finally close the device too;
+            controlPanel->closeDevice();
+        }
     } else if (m_deviceState != DEVICE_CLOSING && m_deviceState != DEVICE_CLOSED) {
         qDebug() << "Error-#" << error << " " << m_device->errorString();
     }

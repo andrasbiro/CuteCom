@@ -53,6 +53,7 @@ public:
         UdpRemoteHost,
         UdpRemotePort,
         TcpLocalPort,
+        AutoReconnect,
         CurrentSession
     };
 
@@ -72,6 +73,7 @@ public:
         QString udpRemoteHost;
         quint16 udpRemotePort;
         quint16 tcpLocalPort;
+        bool autoReconnect;
     };
 
     enum LineTerminator { LF = 0, CR, CRLF, NONE, HEX };
