@@ -117,6 +117,7 @@ void Settings::settingChanged(Settings::Options option, QVariant setting)
         break;
     case AutoReconnect:
         session.autoReconnect = setting.toBool();
+        emit autoConnectChanged(session.autoReconnect);
         break;
     case CurrentSession:
         m_current_session = setting.toString();

@@ -113,6 +113,7 @@ public:
 
 signals:
     void sessionChanged(const Settings::Session &);
+    void autoConnectChanged(const bool autoConnect);
 
 private:
     void readSessionSettings(QSettings &settings);

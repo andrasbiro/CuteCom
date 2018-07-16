@@ -206,6 +206,14 @@ MainWindow::MainWindow(QWidget *parent, const QString &session)
 
     m_reconnectTimer.setSingleShot(false);
     m_reconnectTimer.setInterval(1000); //1s reconnection period is usually enough
+    //stop the timer and restore the state if autoConnect was disabled
+    connect(m_settings, &Settings::autoConnectChanged, [=](bool autoConnect){
+        if ( !autoConnect && m_deviceState == DEVICE_RECONNECT ){
+            m_reconnectTimer.stop();
+            m_deviceState = DEVICE_CLOSING;
+            controlPanel->closeDevice();
+        }
+    });
 
     // tie the control panel's edit and this window's information label together
     m_lb_logfile->setText(m_settings->getLogFileLocation());
@@ -432,10 +440,6 @@ void MainWindow::handleError(QSerialPort::SerialPortError error)
     if (error == QSerialPort::NoError) {
         return;
     } else if (m_deviceState == DEVICE_OPEN || m_deviceState == DEVICE_OPENING || m_deviceState == DEVICE_RECONNECT) {
-        // on hot unplug of usb2serial adapters, multiple errors will be
-        // reported which is of no importance to the users.
-        // reporting it once should be enough
-
         if ( m_settings->getCurrentSession().autoReconnect ){
             m_deviceState = DEVICE_RECONNECT;
             disableInput();
@@ -444,6 +448,9 @@ void MainWindow::handleError(QSerialPort::SerialPortError error)
             }
             m_reconnectTimer.start();
         } else {
+            // on hot unplug of usb2serial adapters, multiple errors will be
+            // reported which is of no importance to the users.
+            // reporting it once should be enough
             QString heading = (m_deviceState == DEVICE_OPENING) ? tr("Error opening device") : tr("Device Error");
             m_deviceState = DEVICE_CLOSING;
             QMessageBox::critical(this, heading, m_device->errorString());
